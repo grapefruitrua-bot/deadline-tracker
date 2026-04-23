@@ -79,10 +79,59 @@
 
     .field { display: flex; flex-direction: column; flex: 1; min-width: 130px; }
     .field.narrow { flex: 0 0 120px; }
-    .field.date-field { flex: 0 0 150px; }
+    .field.date-field { flex: 0 0 auto; }
 
-    input[type="text"],
-    input[type="date"] {
+    .cal-wrap { position: relative; display: inline-block; }
+    .cal-trigger {
+      font-family: var(--sans);
+      font-size: 14px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      cursor: pointer;
+      min-width: 150px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      transition: border-color 0.15s;
+      user-select: none;
+    }
+    .cal-trigger:hover { border-color: var(--accent); }
+    .cal-trigger.open { border-color: var(--accent); }
+    .cal-trigger .placeholder { color: var(--muted); }
+    .cal-popup {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      z-index: 100;
+      width: 260px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .cal-popup.open { display: block; }
+    .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .cal-nav { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 2px 6px; border-radius: 4px; }
+    .cal-nav:hover { color: var(--text); background: var(--bg); }
+    .cal-month { font-size: 14px; font-weight: 500; color: var(--text); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .cal-dow { font-size: 10px; font-family: var(--mono); color: var(--muted); text-align: center; padding: 2px 0 6px; }
+    .cal-day {
+      font-size: 13px; text-align: center; padding: 5px 2px;
+      border-radius: 6px; cursor: pointer; color: var(--text);
+      transition: background 0.1s;
+    }
+    .cal-day:hover { background: var(--accent-light); }
+    .cal-day.today { color: var(--accent); font-weight: 700; }
+    .cal-day.selected { background: var(--accent); color: #fff; }
+    .cal-day.selected:hover { background: var(--accent); }
+    .cal-day.past { color: var(--muted); cursor: default; pointer-events: none; }
+    .cal-day.empty { pointer-events: none; }
+
+    input[type="text"] {
       font-family: var(--sans);
       font-size: 14px;
       padding: 8px 12px;
@@ -224,6 +273,14 @@
       font-size: 14px;
     }
 
+    .error-msg {
+      font-size: 12px;
+      color: var(--danger);
+      font-family: var(--mono);
+      margin-top: 6px;
+      min-height: 16px;
+    }
+
     footer {
       margin-top: 2rem;
       text-align: center;
@@ -254,10 +311,25 @@
     <div class="row" style="align-items: flex-end;">
       <div class="field date-field">
         <label>期限日</label>
-        <input type="date" id="dateInput" />
+        <div class="cal-wrap">
+          <div class="cal-trigger" id="calTrigger" onclick="toggleCal()">
+            <span id="calDisplay" class="placeholder">日付を選択</span>
+            <span>📅</span>
+          </div>
+          <div class="cal-popup" id="calPopup">
+            <div class="cal-header">
+              <button class="cal-nav" onclick="changeMonth(-1)">&#8249;</button>
+              <span class="cal-month" id="calMonth"></span>
+              <button class="cal-nav" onclick="changeMonth(1)">&#8250;</button>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+          </div>
+        </div>
+        <input type="hidden" id="dateInput" />
       </div>
       <button class="add-btn" onclick="addItem()">追加する</button>
     </div>
+    <div class="error-msg" id="errorMsg"></div>
   </div>
 
   <div class="sync-bar">
@@ -271,12 +343,40 @@
 </div>
 
 <script>
-  const KEY = "uni-deadline-tracker-v1";
+  const SUPA_URL = "https://zuqcoktjtmsqkpxxqzki.supabase.co";
+  const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1cWNva3RqdG1zcWtweHhxemtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NTExNzEsImV4cCI6MjA5MjUyNzE3MX0.DXcKNJakM8wxUWbdtXbppLIxBhaqm9bNnU03jdSCvRw";
+  const DONE_KEY = "deadline-done-v1";
   const today = new Date(); today.setHours(0,0,0,0);
-  let items = [], nextId = 1;
+  let items = [];
+
+  function getDoneSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || "[]")); }
+    catch { return new Set(); }
+  }
+
+  function saveDone(doneSet) {
+    localStorage.setItem(DONE_KEY, JSON.stringify([...doneSet]));
+  }
+
+  async function supaFetch(path, options = {}) {
+    const res = await fetch(SUPA_URL + "/rest/v1/" + path, {
+      ...options,
+      headers: {
+        "apikey": SUPA_KEY,
+        "Authorization": "Bearer " + SUPA_KEY,
+        "Content-Type": "application/json",
+        "Prefer": options.prefer || "",
+        ...options.headers
+      }
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
 
   function days(dateStr) {
-    const d = new Date(dateStr); d.setHours(0,0,0,0);
+    const parts = dateStr.split("-");
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
     return Math.round((d - today) / 86400000);
   }
 
@@ -302,7 +402,9 @@
   }
 
   function render() {
-    const sorted = [...items].sort((a,b) => {
+    const doneSet = getDoneSet();
+    const withDone = items.map(item => ({ ...item, done: doneSet.has(item.id) }));
+    const sorted = [...withDone].sort((a,b) => {
       if (a.done !== b.done) return a.done ? 1 : -1;
       return days(a.date) - days(b.date);
     });
@@ -337,59 +439,140 @@
     document.getElementById("syncText").textContent = text;
   }
 
-  // ローカルストレージに保存（共有版はSupabaseに置き換える）
-  function save() {
+  async function load() {
     setSyncing(true);
     try {
-      localStorage.setItem(KEY, JSON.stringify({ items, nextId }));
-      setStatus("保存しました · " + new Date().toLocaleTimeString("ja-JP"));
+      const data = await supaFetch("assignments?select=*&order=created_at.asc");
+      items = data || [];
+      setStatus("読み込み完了 · " + new Date().toLocaleTimeString("ja-JP"));
     } catch(e) {
-      setStatus("保存に失敗しました");
+      setStatus("読み込みに失敗しました");
     }
-    setTimeout(() => setSyncing(false), 600);
-  }
-
-  function load() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        items = data.items || [];
-        nextId = data.nextId || items.length + 1;
-      }
-    } catch(e) {}
-    setStatus("読み込み完了 · " + new Date().toLocaleTimeString("ja-JP"));
+    setSyncing(false);
     render();
   }
 
-  function addItem() {
+  async function addItem() {
     const title = document.getElementById("titleInput").value.trim();
     const subject = document.getElementById("subjectInput").value.trim();
     const date = document.getElementById("dateInput").value;
-    if (!title || !date) { alert("課題名と期限日を入力してください"); return; }
-    items.push({ id: nextId++, title, subject: subject || "未設定", date, done: false });
-    document.getElementById("titleInput").value = "";
-    document.getElementById("subjectInput").value = "";
-    document.getElementById("dateInput").value = "";
-    render(); save();
+    const errorMsg = document.getElementById("errorMsg");
+    if (!title && !date) { errorMsg.textContent = "課題名と期限日を入力してください"; return; }
+    if (!title) { errorMsg.textContent = "課題名を入力してください"; return; }
+    if (!date) { errorMsg.textContent = "期限日を選択してください"; return; }
+    errorMsg.textContent = "";
+    setSyncing(true);
+    try {
+      const newItem = await supaFetch("assignments", {
+        method: "POST",
+        prefer: "return=representation",
+        body: JSON.stringify({ title, subject: subject || "未設定", date })
+      });
+      if (newItem && newItem[0]) items.push(newItem[0]);
+      document.getElementById("titleInput").value = "";
+      document.getElementById("subjectInput").value = "";
+      document.getElementById("dateInput").value = "";
+      selectedDate = null;
+      document.getElementById("calDisplay").textContent = "日付を選択";
+      document.getElementById("calDisplay").classList.add("placeholder");
+      setStatus("保存しました · " + new Date().toLocaleTimeString("ja-JP"));
+      render();
+    } catch(e) {
+      errorMsg.textContent = "保存に失敗しました";
+    }
+    setSyncing(false);
   }
 
   function toggle(id) {
-    const it = items.find(x => x.id === id);
-    if (it) { it.done = !it.done; render(); save(); }
+    const doneSet = getDoneSet();
+    if (doneSet.has(id)) { doneSet.delete(id); } else { doneSet.add(id); }
+    saveDone(doneSet);
+    render();
   }
 
-  function remove(id) {
-    items = items.filter(x => x.id !== id);
-    render(); save();
+  async function remove(id) {
+    setSyncing(true);
+    try {
+      await supaFetch("assignments?id=eq." + id, { method: "DELETE" });
+      items = items.filter(x => x.id !== id);
+      const doneSet = getDoneSet();
+      doneSet.delete(id);
+      saveDone(doneSet);
+      setStatus("削除しました · " + new Date().toLocaleTimeString("ja-JP"));
+      render();
+    } catch(e) {
+      setStatus("削除に失敗しました");
+    }
+    setSyncing(false);
   }
 
-  document.getElementById("dateInput").min = today.toISOString().split("T")[0];
-  document.addEventListener("keydown", e => {
-    if (e.key === "Enter") addItem();
+  ["titleInput", "subjectInput"].forEach(id => {
+    document.getElementById(id).addEventListener("keydown", e => {
+      if (e.key === "Enter") addItem();
+    });
+  });
+
+  // Calendar logic
+  let calDate = new Date(today);
+  let selectedDate = null;
+
+  function toggleCal() {
+    const popup = document.getElementById("calPopup");
+    const trigger = document.getElementById("calTrigger");
+    const isOpen = popup.classList.contains("open");
+    if (isOpen) { popup.classList.remove("open"); trigger.classList.remove("open"); }
+    else { popup.classList.add("open"); trigger.classList.add("open"); renderCal(); }
+  }
+
+  function changeMonth(dir) {
+    calDate = new Date(calDate.getFullYear(), calDate.getMonth() + dir, 1);
+    renderCal();
+  }
+
+  function renderCal() {
+    const y = calDate.getFullYear(), m = calDate.getMonth();
+    document.getElementById("calMonth").textContent = y + "年" + (m+1) + "月";
+    const grid = document.getElementById("calGrid");
+    const dows = ["日","月","火","水","木","金","土"];
+    let html = dows.map(d => `<div class="cal-dow">${d}</div>`).join("");
+    const first = new Date(y, m, 1).getDay();
+    for (let i = 0; i < first; i++) html += `<div class="cal-day empty"></div>`;
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const thisDate = new Date(y, m, d);
+      const dateStr = y + "-" + String(m+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+      const isPast = thisDate < today;
+      const isToday = thisDate.getTime() === today.getTime();
+      const isSelected = selectedDate === dateStr;
+      let cls = "cal-day";
+      if (isPast) cls += " past";
+      if (isToday) cls += " today";
+      if (isSelected) cls += " selected";
+      html += `<div class="${cls}" onclick="selectDate('${dateStr}')">${d}</div>`;
+    }
+    grid.innerHTML = html;
+  }
+
+  function selectDate(dateStr) {
+    selectedDate = dateStr;
+    document.getElementById("dateInput").value = dateStr;
+    const parts = dateStr.split("-");
+    document.getElementById("calDisplay").textContent = parts[0] + "/" + parseInt(parts[1]) + "/" + parseInt(parts[2]);
+    document.getElementById("calDisplay").classList.remove("placeholder");
+    document.getElementById("calPopup").classList.remove("open");
+    document.getElementById("calTrigger").classList.remove("open");
+  }
+
+  document.addEventListener("click", e => {
+    const wrap = document.querySelector(".cal-wrap");
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById("calPopup").classList.remove("open");
+      document.getElementById("calTrigger").classList.remove("open");
+    }
   });
 
   load();
+  setInterval(load, 30000);
 </script>
 </body>
 </html>
