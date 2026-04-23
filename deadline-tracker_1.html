@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>課題期限トラッカー</title>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f5f3ee;
+      --surface: #ffffff;
+      --border: #e2ddd5;
+      --text: #1a1814;
+      --muted: #8a8070;
+      --accent: #2d5a3d;
+      --accent-light: #e8f0ea;
+      --warn: #8a5a1a;
+      --warn-light: #fdf3e3;
+      --danger: #8a1a1a;
+      --danger-light: #fde8e8;
+      --done: #a0a090;
+      --radius: 12px;
+      --mono: 'DM Mono', monospace;
+      --sans: 'Zen Kaku Gothic New', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+
+    header p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+
+    .add-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .add-card label {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+    .field { display: flex; flex-direction: column; flex: 1; min-width: 130px; }
+    .field.narrow { flex: 0 0 120px; }
+    .field.date-field { flex: 0 0 150px; }
+
+    input[type="text"],
+    input[type="date"] {
+      font-family: var(--sans);
+      font-size: 14px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus { border-color: var(--accent); }
+
+    .add-btn {
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 9px 20px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      align-self: flex-end;
+    }
+    .add-btn:hover { opacity: 0.85; }
+    .add-btn:active { transform: scale(0.97); }
+
+    .sync-bar {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 1rem;
+    }
+
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+    .dot.syncing { background: var(--warn); animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .list { display: flex; flex-direction: column; gap: 8px; }
+
+    .item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: opacity 0.2s;
+      animation: slideIn 0.2s ease;
+    }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    .item.done { opacity: 0.4; }
+    .item.urgent { border-left: 3px solid #c0392b; }
+    .item.warning { border-left: 3px solid #d4881a; }
+    .item.ok { border-left: 3px solid var(--accent); }
+
+    .check {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      background: none;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+      color: #fff;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .check.checked { background: var(--accent); border-color: var(--accent); }
+
+    .info { flex: 1; }
+    .info .name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .item.done .name { text-decoration: line-through; }
+    .info .meta {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 2px;
+    }
+
+    .countdown {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .countdown .num {
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .countdown .num.urgent { color: #c0392b; }
+    .countdown .num.warning { color: #d4881a; }
+    .countdown .num.ok { color: var(--accent); }
+    .countdown .num.done { color: var(--done); }
+
+    .pill {
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 99px;
+      margin-top: 3px;
+      display: inline-block;
+    }
+    .pill.urgent { background: var(--danger-light); color: var(--danger); }
+    .pill.warning { background: var(--warn-light); color: var(--warn); }
+    .pill.ok { background: var(--accent-light); color: var(--accent); }
+    .pill.done { background: #f0f0ec; color: var(--done); }
+
+    .del {
+      background: none; border: none;
+      color: var(--muted); font-size: 18px;
+      cursor: pointer; padding: 0 2px;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+    .del:hover { color: #c0392b; }
+
+    .empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .error-msg {
+      font-size: 12px;
+      color: var(--danger);
+      font-family: var(--mono);
+      margin-top: 6px;
+      min-height: 16px;
+    }
+
+    footer {
+      margin-top: 2rem;
+      text-align: center;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>課題期限トラッカー</h1>
+    <p>大学の課題をみんなで管理</p>
+  </header>
+
+  <div class="add-card">
+    <div class="row">
+      <div class="field">
+        <label>課題名</label>
+        <input type="text" id="titleInput" placeholder="例：英語レポート" />
+      </div>
+      <div class="field narrow">
+        <label>科目</label>
+        <input type="text" id="subjectInput" placeholder="例：英語" />
+      </div>
+    </div>
+    <div class="row" style="align-items: flex-end;">
+      <div class="field date-field">
+        <label>期限日</label>
+        <input type="date" id="dateInput" />
+      </div>
+      <button class="add-btn" onclick="addItem()">追加する</button>
+    </div>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <div class="sync-bar">
+    <span class="dot" id="dot"></span>
+    <span id="syncText">読み込み中...</span>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <footer>自動保存 · 30秒ごとに更新</footer>
+</div>
+
+<script>
+  const KEY = "uni-deadline-tracker-v1";
+  const today = new Date(); today.setHours(0,0,0,0);
+  let items = [], nextId = 1;
+
+  function days(dateStr) {
+    const d = new Date(dateStr); d.setHours(0,0,0,0);
+    return Math.round((d - today) / 86400000);
+  }
+
+  function status(d, done) {
+    if (done) return "done";
+    if (d <= 3) return "urgent";
+    if (d <= 7) return "warning";
+    return "ok";
+  }
+
+  function label(d, done) {
+    if (done) return "完了";
+    if (d < 0) return Math.abs(d) + "日超過";
+    if (d === 0) return "今日!";
+    if (d === 1) return "明日";
+    return "あと" + d + "日";
+  }
+
+  function numDisplay(d, done) {
+    if (done) return "✓";
+    if (d < 0) return "!";
+    return d;
+  }
+
+  function render() {
+    const sorted = [...items].sort((a,b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      return days(a.date) - days(b.date);
+    });
+    const list = document.getElementById("list");
+    if (!sorted.length) {
+      list.innerHTML = '<div class="empty">課題はまだありません。追加してみましょう！</div>';
+      return;
+    }
+    list.innerHTML = sorted.map(item => {
+      const d = days(item.date);
+      const s = status(d, item.done);
+      return `<div class="item ${s}">
+        <button class="check ${item.done ? "checked" : ""}" onclick="toggle(${item.id})">${item.done ? "✓" : ""}</button>
+        <div class="info">
+          <div class="name">${item.title}</div>
+          <div class="meta">${item.subject} · ${item.date}</div>
+        </div>
+        <div class="countdown">
+          <div class="num ${s}">${numDisplay(d, item.done)}</div>
+          <div><span class="pill ${s}">${label(d, item.done)}</span></div>
+        </div>
+        <button class="del" onclick="remove(${item.id})">×</button>
+      </div>`;
+    }).join("");
+  }
+
+  function setSyncing(on) {
+    document.getElementById("dot").className = "dot" + (on ? " syncing" : "");
+  }
+
+  function setStatus(text) {
+    document.getElementById("syncText").textContent = text;
+  }
+
+  // ローカルストレージに保存（共有版はSupabaseに置き換える）
+  function save() {
+    setSyncing(true);
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ items, nextId }));
+      setStatus("保存しました · " + new Date().toLocaleTimeString("ja-JP"));
+    } catch(e) {
+      setStatus("保存に失敗しました");
+    }
+    setTimeout(() => setSyncing(false), 600);
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        items = data.items || [];
+        nextId = data.nextId || items.length + 1;
+      }
+    } catch(e) {}
+    setStatus("読み込み完了 · " + new Date().toLocaleTimeString("ja-JP"));
+    render();
+  }
+
+  function addItem() {
+    const title = document.getElementById("titleInput").value.trim();
+    const subject = document.getElementById("subjectInput").value.trim();
+    const date = document.getElementById("dateInput").value;
+    const errorMsg = document.getElementById("errorMsg");
+    if (!title && !date) { errorMsg.textContent = "課題名と期限日を入力してください"; return; }
+    if (!title) { errorMsg.textContent = "課題名を入力してください"; return; }
+    if (!date) { errorMsg.textContent = "期限日を選択してください"; return; }
+    errorMsg.textContent = "";
+    items.push({ id: nextId++, title, subject: subject || "未設定", date, done: false });
+    document.getElementById("titleInput").value = "";
+    document.getElementById("subjectInput").value = "";
+    document.getElementById("dateInput").value = "";
+    render(); save();
+  }
+
+  function toggle(id) {
+    const it = items.find(x => x.id === id);
+    if (it) { it.done = !it.done; render(); save(); }
+  }
+
+  function remove(id) {
+    items = items.filter(x => x.id !== id);
+    render(); save();
+  }
+
+  document.getElementById("dateInput").min = today.toISOString().split("T")[0];
+  ["titleInput", "subjectInput", "dateInput"].forEach(id => {
+    document.getElementById(id).addEventListener("keydown", e => {
+      if (e.key === "Enter") addItem();
+    });
+  });
+
+  load();
+</script>
+</body>
+</html>
