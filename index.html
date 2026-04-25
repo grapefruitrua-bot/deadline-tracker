@@ -373,6 +373,12 @@
         <input type="text" id="subjectInput" placeholder="例：英語" />
       </div>
     </div>
+    <div class="row">
+      <div class="field">
+        <label>リンク（任意）</label>
+        <input type="text" id="urlInput" placeholder="例：https://classroom.google.com/..." />
+      </div>
+    </div>
     <div class="row" style="align-items: flex-end;">
       <div class="field date-field">
         <label>期限日</label>
@@ -523,12 +529,19 @@
     list.innerHTML = sorted.map(item => {
       const d = days(item.date);
       const s = status(d, item.done);
+      const linkIcon = item.url
+        ? `<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+            <a href="${item.url}" target="_blank" rel="noopener" title="リンクを開く" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);text-decoration:none;" onclick="event.stopPropagation()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></a>
+            <button onclick="editLink(${item.id})" title="リンクを編集" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;padding:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          </div>`
+        : `<button onclick="editLink(${item.id})" title="リンクを追加" style="display:flex;align-items:center;justify-content:center;flex-shrink:0;height:28px;padding:0 8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);white-space:nowrap;">リンク追加</button>`;
       return `<div class="item ${s}">
         <button class="check ${item.done ? "checked" : ""}" onclick="toggle(${item.id})">${item.done ? "✓" : ""}</button>
         <div class="info">
           <div class="name">${item.title}</div>
           <div class="meta">${item.subject} · ${item.date}</div>
         </div>
+        ${linkIcon}
         <div class="countdown">
           <div class="num ${s}">${numDisplay(d, item.done)}</div>
           <div><span class="pill ${s}">${label(d, item.done)}</span></div>
@@ -588,13 +601,14 @@
         const newItem = await supaFetch("assignments", {
           method: "POST",
           prefer: "return=representation",
-          body: JSON.stringify({ title, subject: subject || "未設定", date })
+        body: (() => { const urlVal = document.getElementById("urlInput").value.trim(); return JSON.stringify({ title, subject: subject || "未設定", date, url: urlVal || null }); })()
         });
         if (newItem && newItem[0]) items.push(newItem[0]);
         render();
       }
       document.getElementById("titleInput").value = "";
       document.getElementById("subjectInput").value = "";
+      document.getElementById("urlInput").value = "";
       document.getElementById("dateInput").value = "";
       selectedDate = null;
       document.getElementById("calDisplay").textContent = "日付を選択";
@@ -825,6 +839,29 @@
       }
     }
     render();
+  }
+
+  async function editLink(id) {
+    const item = items.find(x => x.id === id);
+    if (!item) return;
+    const current = item.url || "";
+    const newUrl = prompt(item.url ? "リンクを編集（空にすると削除）:" : "リンクを追加:", current);
+    if (newUrl === null) return;
+    const urlVal = newUrl.trim() || null;
+    setSyncing(true);
+    try {
+      await supaFetch("assignments?id=eq." + id, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: JSON.stringify({ url: urlVal })
+      });
+      item.url = urlVal;
+      render();
+      setStatus("保存しました · " + new Date().toLocaleTimeString("ja-JP"));
+    } catch(e) {
+      setStatus("保存に失敗しました");
+    }
+    setSyncing(false);
   }
 
   async function init() {
