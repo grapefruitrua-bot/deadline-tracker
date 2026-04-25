@@ -726,15 +726,34 @@
     });
   }
 
-  function getNextDeadlineAfterAddDay(addDay, deadlineDay) {
-    const d = new Date(today);
-    const diffToAdd = (addDay - d.getDay() + 7) % 7;
-    const addDate = new Date(d);
-    addDate.setDate(d.getDate() + diffToAdd);
+  function toDateStr(d) {
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+
+  // 課題が出る曜日(addDay)になったら締め切り日(deadlineDay)を計算して返す
+  // まだaddDayになっていなければnullを返す（追加しない）
+  // 締め切りを過ぎていたら古い課題を削除して次のサイクルを待つ
+  function getDeadlineIfActive(addDay, deadlineDay) {
+    const todayDay = today.getDay();
+
+    // 締め切り曜日は addDay より何日後か
     const diffToDl = (deadlineDay - addDay + 7) % 7 || 7;
-    const dlDate = new Date(addDate);
-    dlDate.setDate(addDate.getDate() + diffToDl);
-    return dlDate.getFullYear() + "-" + String(dlDate.getMonth()+1).padStart(2,"0") + "-" + String(dlDate.getDate()).padStart(2,"0");
+
+    // 直近のaddDayを計算（過去も含む）
+    const diffFromAddDay = (todayDay - addDay + 7) % 7; // 今日がaddDayから何日後か
+    const lastAddDate = new Date(today);
+    lastAddDate.setDate(today.getDate() - diffFromAddDay);
+
+    // 対応する締め切り日
+    const dlDate = new Date(lastAddDate);
+    dlDate.setDate(lastAddDate.getDate() + diffToDl);
+
+    // 締め切りがまだ来ていない かつ addDayが来ている（diffFromAddDay >= 0）
+    if (dlDate >= today && diffFromAddDay >= 0) {
+      return toDateStr(dlDate);
+    }
+    // まだaddDayが来ていない場合はnull
+    return null;
   }
 
   async function loadWeekly() {
@@ -770,17 +789,39 @@
 
   async function addWeeklyIfNeeded() {
     for (const weekly of weeklyItems) {
-      const nextDate = getNextDeadlineAfterAddDay(weekly.add_day, weekly.deadline_day);
-      const alreadyExists = items.some(x => x.title === weekly.title && x.date === nextDate);
-      if (!alreadyExists) {
-        try {
-          const newItem = await supaFetch("assignments", {
-            method: "POST",
-            prefer: "return=representation",
-            body: JSON.stringify({ title: weekly.title, subject: weekly.subject, date: nextDate })
-          });
-          if (newItem && newItem[0]) items.push(newItem[0]);
-        } catch(e) {}
+      const deadlineDate = getDeadlineIfActive(weekly.add_day, weekly.deadline_day);
+
+      if (deadlineDate) {
+        // 同じ課題が既にある場合は追加しない
+        const alreadyExists = items.some(x => x.title === weekly.title && x.date === deadlineDate);
+        if (!alreadyExists) {
+          // 期限切れの古い同名課題を削除
+          const expired = items.filter(x => x.title === weekly.title && x.date < deadlineDate);
+          for (const old of expired) {
+            try {
+              await supaFetch("assignments?id=eq." + old.id, { method: "DELETE" });
+              items = items.filter(x => x.id !== old.id);
+            } catch(e) {}
+          }
+          // 新しい課題を追加
+          try {
+            const newItem = await supaFetch("assignments", {
+              method: "POST",
+              prefer: "return=representation",
+              body: JSON.stringify({ title: weekly.title, subject: weekly.subject, date: deadlineDate })
+            });
+            if (newItem && newItem[0]) items.push(newItem[0]);
+          } catch(e) {}
+        }
+      } else {
+        // addDayがまだ来ていない → 期限切れの古い課題を削除だけする
+        const expired = items.filter(x => x.title === weekly.title);
+        for (const old of expired) {
+          try {
+            await supaFetch("assignments?id=eq." + old.id, { method: "DELETE" });
+            items = items.filter(x => x.id !== old.id);
+          } catch(e) {}
+        }
       }
     }
     render();
