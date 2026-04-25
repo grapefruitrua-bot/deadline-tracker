@@ -588,7 +588,7 @@
         const newWeekly = await supaFetch("weekly_assignments", {
           method: "POST",
           prefer: "return=representation",
-          body: JSON.stringify({ title, subject: subject || "未設定", add_day: selectedAddDay, deadline_day: selectedDeadlineDay })
+          body: JSON.stringify({ title, add_day: selectedAddDay, deadline_day: selectedDeadlineDay })
         });
         if (newWeekly && newWeekly[0]) weeklyItems.push(newWeekly[0]);
         renderWeekly();
@@ -597,7 +597,7 @@
         const newItem = await supaFetch("assignments", {
           method: "POST",
           prefer: "return=representation",
-        body: (() => { const urlVal = document.getElementById("urlInput").value.trim(); return JSON.stringify({ title, subject: subject || "未設定", date, url: urlVal || null }); })()
+        body: (() => { const urlVal = document.getElementById("urlInput").value.trim(); return JSON.stringify({ title, date, url: urlVal || null }); })()
         });
         if (newItem && newItem[0]) items.push(newItem[0]);
         render();
@@ -783,7 +783,7 @@
       <div class="weekly-item">
         <span class="repeat-pill">${DAYS[w.add_day]}→${DAYS[w.deadline_day]}</span>
         <span style="flex:1;font-weight:500;">${w.title}</span>
-        <span style="color:var(--muted);font-size:12px;">${w.subject}</span>
+        
         <button class="del" onclick="removeWeekly(${w.id})" title="削除">×</button>
       </div>
     `).join("");
@@ -818,7 +818,7 @@
             const newItem = await supaFetch("assignments", {
               method: "POST",
               prefer: "return=representation",
-              body: JSON.stringify({ title: weekly.title, subject: weekly.subject, date: deadlineDate })
+              body: JSON.stringify({ title: weekly.title, date: deadlineDate })
             });
             if (newItem && newItem[0]) items.push(newItem[0]);
           } catch(e) {}
