@@ -368,10 +368,7 @@
         <label>課題名</label>
         <input type="text" id="titleInput" placeholder="例：英語レポート" />
       </div>
-      <div class="field narrow">
-        <label>科目</label>
-        <input type="text" id="subjectInput" placeholder="例：英語" />
-      </div>
+
     </div>
     <div class="row">
       <div class="field">
@@ -539,7 +536,7 @@
         <button class="check ${item.done ? "checked" : ""}" onclick="toggle(${item.id})">${item.done ? "✓" : ""}</button>
         <div class="info">
           <div class="name">${item.title}</div>
-          <div class="meta">${item.subject} · ${item.date}</div>
+          <div class="meta">${item.date}</div>
         </div>
         ${linkIcon}
         <div class="countdown">
@@ -574,7 +571,6 @@
 
   async function addItem() {
     const title = document.getElementById("titleInput").value.trim();
-    const subject = document.getElementById("subjectInput").value.trim();
     const date = document.getElementById("dateInput").value;
     const isAuto = document.getElementById("autoToggle").checked;
     const errorMsg = document.getElementById("errorMsg");
@@ -607,7 +603,7 @@
         render();
       }
       document.getElementById("titleInput").value = "";
-      document.getElementById("subjectInput").value = "";
+
       document.getElementById("urlInput").value = "";
       document.getElementById("dateInput").value = "";
       selectedDate = null;
@@ -647,7 +643,7 @@
     setSyncing(false);
   }
 
-  ["titleInput", "subjectInput"].forEach(id => {
+  ["titleInput"].forEach(id => {
     document.getElementById(id).addEventListener("keydown", e => {
       if (e.key === "Enter") addItem();
     });
