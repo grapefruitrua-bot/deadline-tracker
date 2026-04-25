@@ -78,7 +78,6 @@
     .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 
     .field { display: flex; flex-direction: column; flex: 1; min-width: 130px; }
-    .field.narrow { flex: 0 0 120px; }
     .field.date-field { flex: 0 0 auto; }
 
     .cal-wrap { position: relative; display: inline-block; }
@@ -456,6 +455,16 @@
   const SUPA_URL = "https://zuqcoktjtmsqkpxxqzki.supabase.co";
   const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1cWNva3RqdG1zcWtweHhxemtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NTExNzEsImV4cCI6MjA5MjUyNzE3MX0.DXcKNJakM8wxUWbdtXbppLIxBhaqm9bNnU03jdSCvRw";
   const DONE_KEY = "deadline-done-v1";
+  const MANUAL_DEL_KEY = "deadline-manual-del-v1";
+
+  function getManualDelSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(MANUAL_DEL_KEY) || "[]")); }
+    catch { return new Set(); }
+  }
+
+  function saveManualDel(set) {
+    localStorage.setItem(MANUAL_DEL_KEY, JSON.stringify([...set]));
+  }
   const today = new Date(); today.setHours(0,0,0,0);
   let items = [];
 
@@ -628,6 +637,10 @@
   }
 
   async function remove(id) {
+    const item = items.find(x => x.id === id);
+    if (!item) return;
+    const confirmed = confirm("「" + item.title + "」を削除しますか？\n\n※ 左のチェックは自分の画面だけに反映されます。\n　 完了した課題はチェックを活用してください！\n　 削除するとみんなの画面からも消えます。");
+    if (!confirmed) return;
     setSyncing(true);
     try {
       await supaFetch("assignments?id=eq." + id, { method: "DELETE" });
@@ -635,6 +648,13 @@
       const doneSet = getDoneSet();
       doneSet.delete(id);
       saveDone(doneSet);
+      // 自動追加の課題なら手動削除として記録
+      const isWeekly = weeklyItems.some(w => w.title === item.title);
+      if (isWeekly) {
+        const manualDelSet = getManualDelSet();
+        manualDelSet.add(String(item.title) + "||" + item.date);
+        saveManualDel(manualDelSet);
+      }
       setStatus("削除しました · " + new Date().toLocaleTimeString("ja-JP"));
       render();
     } catch(e) {
@@ -802,8 +822,11 @@
       const deadlineDate = getDeadlineIfActive(weekly.add_day, weekly.deadline_day);
 
       if (deadlineDate) {
-        // 同じ課題が既にある場合は追加しない
+        // 同じ課題が既にある、または手動で削除された場合は追加しない
+        const manualDelSet = getManualDelSet();
+        const manuallyDeleted = manualDelSet.has(String(weekly.title) + "||" + deadlineDate);
         const alreadyExists = items.some(x => x.title === weekly.title && x.date === deadlineDate);
+        if (manuallyDeleted) continue;
         if (!alreadyExists) {
           // 期限切れの古い同名課題を削除
           const expired = items.filter(x => x.title === weekly.title && x.date < deadlineDate);
@@ -824,7 +847,7 @@
           } catch(e) {}
         }
       } else {
-        // addDayがまだ来ていない → 期限切れの古い課題を削除だけする
+        // addDayがまだ来ていない → 期限切れの古い課題を削除、手動削除記録もリセット
         const expired = items.filter(x => x.title === weekly.title);
         for (const old of expired) {
           try {
@@ -832,6 +855,12 @@
             items = items.filter(x => x.id !== old.id);
           } catch(e) {}
         }
+        // 古い手動削除記録を削除（新しいサイクルに備える）
+        const manualDelSet = getManualDelSet();
+        for (const key of [...manualDelSet]) {
+          if (key.startsWith(weekly.title + "||")) manualDelSet.delete(key);
+        }
+        saveManualDel(manualDelSet);
       }
     }
     render();
@@ -868,7 +897,7 @@
   }
 
   init();
-  setInterval(load, 30000);
+  setInterval(async () => { await load(); await addWeeklyIfNeeded(); }, 30000);
 </script>
 </body>
 </html>
