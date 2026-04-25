@@ -810,6 +810,10 @@
   }
 
   async function removeWeekly(id) {
+    const item = weeklyItems.find(x => x.id === id);
+    if (!item) return;
+    const confirmed = confirm("「" + item.title + "」の自動追加を削除しますか？\n\n削除すると毎週の自動追加が止まります。");
+    if (!confirmed) return;
     try {
       await supaFetch("weekly_assignments?id=eq." + id, { method: "DELETE" });
       weeklyItems = weeklyItems.filter(x => x.id !== id);
