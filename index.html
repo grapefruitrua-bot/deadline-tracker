@@ -392,7 +392,44 @@
         </div>
         <input type="hidden" id="dateInput" />
       </div>
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;flex:0 0 auto;">
+        <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">&nbsp;</label>
+        <div style="display:flex;align-items:center;gap:8px;height:36px;">
+          <span style="font-size:13px;color:var(--text);white-space:nowrap;">自動追加</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="autoToggle" onchange="toggleAutoOptions()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
       <button class="add-btn" onclick="addItem()">追加する</button>
+    </div>
+    <div class="auto-options" id="autoOptions">
+      <div class="auto-row">
+        <span class="auto-row-label">課題が出る曜日</span>
+        <div class="day-btns" id="addDayBtns">
+          <button class="day-btn" data-day="0">日</button>
+          <button class="day-btn" data-day="1">月</button>
+          <button class="day-btn" data-day="2">火</button>
+          <button class="day-btn" data-day="3">水</button>
+          <button class="day-btn" data-day="4">木</button>
+          <button class="day-btn" data-day="5">金</button>
+          <button class="day-btn" data-day="6">土</button>
+        </div>
+      </div>
+      <div class="auto-row">
+        <span class="auto-row-label">締め切り曜日</span>
+        <div class="day-btns" id="deadlineDayBtns">
+          <button class="day-btn" data-day="0">日</button>
+          <button class="day-btn" data-day="1">月</button>
+          <button class="day-btn" data-day="2">火</button>
+          <button class="day-btn" data-day="3">水</button>
+          <button class="day-btn" data-day="4">木</button>
+          <button class="day-btn" data-day="5">金</button>
+          <button class="day-btn" data-day="6">土</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);">例：木曜に課題が出て → 次の火曜が締め切り</div>
     </div>
     <div class="error-msg" id="errorMsg"></div>
   </div>
