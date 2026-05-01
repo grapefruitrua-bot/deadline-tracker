@@ -848,27 +848,36 @@
       const deadlineDate = getDeadlineIfActive(weekly.add_day, weekly.deadline_day);
 
       if (deadlineDate) {
-        // 同じ課題が既にある、または手動で削除された場合は追加しない
+        // 手動削除済みの場合はスキップ
         const manuallyDeleted = isManuallyDeleted(weekly.title, deadlineDate);
-        const alreadyExists = items.some(x => x.title === weekly.title && x.date === deadlineDate);
         if (manuallyDeleted) continue;
+
+        // 同じタイトルの課題を全部取得
+        const existing = items.filter(x => x.title === weekly.title);
+        const alreadyExists = existing.some(x => x.date === deadlineDate);
+
         if (!alreadyExists) {
-          // 期限切れの古い同名課題を削除
-          const expired = items.filter(x => x.title === weekly.title && x.date < deadlineDate);
-          for (const old of expired) {
+          // 古い同名課題を全部削除してから追加（重複防止）
+          for (const old of existing) {
             try {
               await supaFetch("assignments?id=eq." + old.id, { method: "DELETE" });
               items = items.filter(x => x.id !== old.id);
             } catch(e) {}
           }
-          // 新しい課題を追加
+          // Supabaseに既に同じものがないか再確認してから追加
           try {
-            const newItem = await supaFetch("assignments", {
-              method: "POST",
-              prefer: "return=representation",
-              body: JSON.stringify({ title: weekly.title, date: deadlineDate })
-            });
-            if (newItem && newItem[0]) items.push(newItem[0]);
+            const check = await supaFetch("assignments?title=eq." + encodeURIComponent(weekly.title) + "&date=eq." + encodeURIComponent(deadlineDate) + "&select=id");
+            if (!check || check.length === 0) {
+              const newItem = await supaFetch("assignments", {
+                method: "POST",
+                prefer: "return=representation",
+                body: JSON.stringify({ title: weekly.title, date: deadlineDate })
+              });
+              if (newItem && newItem[0]) items.push(newItem[0]);
+            } else {
+              // 既にDBにあるなら items に追加だけ
+              items.push(...check);
+            }
           } catch(e) {}
         }
       } else {
