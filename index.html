@@ -448,6 +448,14 @@
     <div id="weeklyList"></div>
   </div>
 
+  <div style="margin-top:2rem;">
+    <button onclick="toggleLog()" style="background:none;border:none;cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);padding:0;text-decoration:underline;">削除ログを見る</button>
+    <div id="logSection" style="display:none;margin-top:10px;">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">削除ログ</div>
+      <div id="logList" style="font-size:12px;color:var(--muted);font-family:var(--mono);"></div>
+    </div>
+  </div>
+
 <footer>自動保存 · 30秒ごとに更新</footer>
 </div>
 
@@ -592,6 +600,14 @@
     try {
       const data = await supaFetch("assignments?select=*&order=created_at.asc");
       items = data || [];
+      // 期限超過した課題を自動削除
+      const expired = items.filter(x => days(x.date) < 0);
+      for (const item of expired) {
+        try {
+          await supaFetch("assignments?id=eq." + item.id, { method: "DELETE" });
+          items = items.filter(x => x.id !== item.id);
+        } catch(e) {}
+      }
       setStatus("読み込み完了 · " + new Date().toLocaleTimeString("ja-JP"));
     } catch(e) {
       setStatus("読み込みに失敗しました");
@@ -675,6 +691,14 @@
       if (isWeekly) {
         await addManualDeletion(item.title, item.date);
       }
+      // 削除ログを記録
+      try {
+        await supaFetch("deletion_logs", {
+          method: "POST",
+          prefer: "return=representation",
+          body: JSON.stringify({ title: item.title })
+        });
+      } catch(e) {}
       setStatus("削除しました · " + new Date().toLocaleTimeString("ja-JP"));
       render();
     } catch(e) {
@@ -917,6 +941,39 @@
       setStatus("保存に失敗しました");
     }
     setSyncing(false);
+  }
+
+  let logLoaded = false;
+
+  async function toggleLog() {
+    const section = document.getElementById("logSection");
+    const isOpen = section.style.display !== "none";
+    if (isOpen) {
+      section.style.display = "none";
+    } else {
+      section.style.display = "block";
+      if (!logLoaded) await loadLog();
+    }
+  }
+
+  async function loadLog() {
+    const logList = document.getElementById("logList");
+    logList.textContent = "読み込み中...";
+    try {
+      const logs = await supaFetch("deletion_logs?select=*&order=deleted_at.desc&limit=30") || [];
+      if (!logs.length) {
+        logList.textContent = "ログはありません";
+        return;
+      }
+      logList.innerHTML = logs.map(l => {
+        const d = new Date(l.deleted_at);
+        const dateStr = d.getFullYear() + "/" + (d.getMonth()+1) + "/" + d.getDate() + " " + d.getHours().toString().padStart(2,"0") + ":" + d.getMinutes().toString().padStart(2,"0");
+        return `<div style="padding:4px 0;border-bottom:0.5px solid var(--border);">${dateStr} · 「${l.title}」が削除されました</div>`;
+      }).join("");
+      logLoaded = true;
+    } catch(e) {
+      logList.textContent = "読み込みに失敗しました";
+    }
   }
 
   async function init() {
