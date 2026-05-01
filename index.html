@@ -455,15 +455,37 @@
   const SUPA_URL = "https://zuqcoktjtmsqkpxxqzki.supabase.co";
   const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1cWNva3RqdG1zcWtweHhxemtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NTExNzEsImV4cCI6MjA5MjUyNzE3MX0.DXcKNJakM8wxUWbdtXbppLIxBhaqm9bNnU03jdSCvRw";
   const DONE_KEY = "deadline-done-v1";
-  const MANUAL_DEL_KEY = "deadline-manual-del-v1";
+  let manualDeletions = []; // Supabaseから取得
 
-  function getManualDelSet() {
-    try { return new Set(JSON.parse(localStorage.getItem(MANUAL_DEL_KEY) || "[]")); }
-    catch { return new Set(); }
+  async function loadManualDeletions() {
+    try {
+      manualDeletions = await supaFetch("manual_deletions?select=*") || [];
+    } catch(e) { manualDeletions = []; }
   }
 
-  function saveManualDel(set) {
-    localStorage.setItem(MANUAL_DEL_KEY, JSON.stringify([...set]));
+  function isManuallyDeleted(title, deadlineDate) {
+    return manualDeletions.some(x => x.title === title && x.deadline_date === deadlineDate);
+  }
+
+  async function addManualDeletion(title, deadlineDate) {
+    try {
+      const result = await supaFetch("manual_deletions", {
+        method: "POST",
+        prefer: "return=representation",
+        body: JSON.stringify({ title, deadline_date: deadlineDate })
+      });
+      if (result && result[0]) manualDeletions.push(result[0]);
+    } catch(e) {}
+  }
+
+  async function clearManualDeletions(title) {
+    try {
+      const toDelete = manualDeletions.filter(x => x.title === title);
+      for (const d of toDelete) {
+        await supaFetch("manual_deletions?id=eq." + d.id, { method: "DELETE" });
+      }
+      manualDeletions = manualDeletions.filter(x => x.title !== title);
+    } catch(e) {}
   }
   const today = new Date(); today.setHours(0,0,0,0);
   let items = [];
@@ -648,12 +670,10 @@
       const doneSet = getDoneSet();
       doneSet.delete(id);
       saveDone(doneSet);
-      // 自動追加の課題なら手動削除として記録
+      // 自動追加の課題なら手動削除としてSupabaseに記録
       const isWeekly = weeklyItems.some(w => w.title === item.title);
       if (isWeekly) {
-        const manualDelSet = getManualDelSet();
-        manualDelSet.add(String(item.title) + "||" + item.date);
-        saveManualDel(manualDelSet);
+        await addManualDeletion(item.title, item.date);
       }
       setStatus("削除しました · " + new Date().toLocaleTimeString("ja-JP"));
       render();
@@ -817,6 +837,8 @@
     try {
       await supaFetch("weekly_assignments?id=eq." + id, { method: "DELETE" });
       weeklyItems = weeklyItems.filter(x => x.id !== id);
+      // 手動削除記録もリセット（同じ課題名で再登録できるように）
+      await clearManualDeletions(item.title);
       renderWeekly();
     } catch(e) {}
   }
@@ -827,8 +849,7 @@
 
       if (deadlineDate) {
         // 同じ課題が既にある、または手動で削除された場合は追加しない
-        const manualDelSet = getManualDelSet();
-        const manuallyDeleted = manualDelSet.has(String(weekly.title) + "||" + deadlineDate);
+        const manuallyDeleted = isManuallyDeleted(weekly.title, deadlineDate);
         const alreadyExists = items.some(x => x.title === weekly.title && x.date === deadlineDate);
         if (manuallyDeleted) continue;
         if (!alreadyExists) {
@@ -859,12 +880,8 @@
             items = items.filter(x => x.id !== old.id);
           } catch(e) {}
         }
-        // 古い手動削除記録を削除（新しいサイクルに備える）
-        const manualDelSet = getManualDelSet();
-        for (const key of [...manualDelSet]) {
-          if (key.startsWith(weekly.title + "||")) manualDelSet.delete(key);
-        }
-        saveManualDel(manualDelSet);
+        // 古い手動削除記録をリセット（新しいサイクルに備える）
+        await clearManualDeletions(weekly.title);
       }
     }
     render();
@@ -897,11 +914,12 @@
     setupDayBtns();
     await load();
     await loadWeekly();
+    await loadManualDeletions();
     await addWeeklyIfNeeded();
   }
 
   init();
-  setInterval(async () => { await load(); await addWeeklyIfNeeded(); }, 30000);
+  setInterval(async () => { await load(); await loadManualDeletions(); await addWeeklyIfNeeded(); }, 30000);
 </script>
 </body>
 </html>
