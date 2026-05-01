@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>課題期限トラッカー</title>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f5f3ee;
+      --surface: #ffffff;
+      --border: #e2ddd5;
+      --text: #1a1814;
+      --muted: #8a8070;
+      --accent: #2d5a3d;
+      --accent-light: #e8f0ea;
+      --warn: #8a5a1a;
+      --warn-light: #fdf3e3;
+      --danger: #8a1a1a;
+      --danger-light: #fde8e8;
+      --done: #a0a090;
+      --radius: 12px;
+      --mono: 'DM Mono', monospace;
+      --sans: 'Zen Kaku Gothic New', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+
+    header p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+
+    .add-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .add-card label {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+    .field { display: flex; flex-direction: column; flex: 1; min-width: 130px; }
+    .field.date-field { flex: 0 0 auto; }
+
+    .cal-wrap { position: relative; display: inline-block; }
+    .cal-trigger {
+      font-family: var(--sans);
+      font-size: 14px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      cursor: pointer;
+      min-width: 150px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      transition: border-color 0.15s;
+      user-select: none;
+    }
+    .cal-trigger:hover { border-color: var(--accent); }
+    .cal-trigger.open { border-color: var(--accent); }
+    .cal-trigger .placeholder { color: var(--muted); }
+    .cal-popup {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      z-index: 100;
+      width: 260px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .cal-popup.open { display: block; }
+    .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .cal-nav { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 2px 6px; border-radius: 4px; }
+    .cal-nav:hover { color: var(--text); background: var(--bg); }
+    .cal-month { font-size: 14px; font-weight: 500; color: var(--text); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .cal-dow { font-size: 10px; font-family: var(--mono); color: var(--muted); text-align: center; padding: 2px 0 6px; }
+    .cal-day {
+      font-size: 13px; text-align: center; padding: 5px 2px;
+      border-radius: 6px; cursor: pointer; color: var(--text);
+      transition: background 0.1s;
+    }
+    .cal-day:hover { background: var(--accent-light); }
+    .cal-day.today { color: var(--accent); font-weight: 700; }
+    .cal-day.selected { background: var(--accent); color: #fff; }
+    .cal-day.selected:hover { background: var(--accent); }
+    .cal-day.past { color: var(--muted); cursor: default; pointer-events: none; }
+    .cal-day.empty { pointer-events: none; }
+
+    input[type="text"] {
+      font-family: var(--sans);
+      font-size: 14px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus { border-color: var(--accent); }
+
+    .add-btn {
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 9px 20px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      align-self: flex-end;
+    }
+    .add-btn:hover { opacity: 0.85; }
+    .add-btn:active { transform: scale(0.97); }
+
+    .sync-bar {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 1rem;
+    }
+
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+    .dot.syncing { background: var(--warn); animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .list { display: flex; flex-direction: column; gap: 8px; }
+
+    .item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: opacity 0.2s;
+      animation: slideIn 0.2s ease;
+    }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    .item.done { opacity: 0.4; }
+    .item.urgent { border-left: 3px solid #c0392b; }
+    .item.warning { border-left: 3px solid #d4881a; }
+    .item.ok { border-left: 3px solid var(--accent); }
+
+    .check {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      background: none;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+      color: #fff;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .check.checked { background: var(--accent); border-color: var(--accent); }
+
+    .info { flex: 1; }
+    .info .name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .item.done .name { text-decoration: line-through; }
+    .info .meta {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 2px;
+    }
+
+    .countdown {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .countdown .num {
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .countdown .num.urgent { color: #c0392b; }
+    .countdown .num.warning { color: #d4881a; }
+    .countdown .num.ok { color: var(--accent); }
+    .countdown .num.done { color: var(--done); }
+
+    .pill {
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 99px;
+      margin-top: 3px;
+      display: inline-block;
+    }
+    .pill.urgent { background: var(--danger-light); color: var(--danger); }
+    .pill.warning { background: var(--warn-light); color: var(--warn); }
+    .pill.ok { background: var(--accent-light); color: var(--accent); }
+    .pill.done { background: #f0f0ec; color: var(--done); }
+
+    .del {
+      background: none; border: none;
+      color: var(--muted); font-size: 18px;
+      cursor: pointer; padding: 0 2px;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+    .del:hover { color: #c0392b; }
+
+    .empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .error-msg {
+      font-size: 12px;
+      color: var(--danger);
+      font-family: var(--mono);
+      margin-top: 6px;
+      min-height: 16px;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 2rem 0 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .weekly-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
+    .weekly-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .weekly-badge {
+      font-size: 11px;
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--accent-light);
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .toggle-btn {
+      font-size: 12px;
+      color: var(--accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: var(--mono);
+      padding: 0;
+      text-decoration: underline;
+    }
+
+    .toggle-switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; display: inline-block; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 99px; cursor: pointer; transition: background 0.2s; }
+    .toggle-slider:before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.2s; }
+    .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+    .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+    .auto-options { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 10px; display: none; flex-direction: column; gap: 12px; }
+    .auto-options.open { display: flex; }
+    .auto-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .auto-row-label { font-size: 12px; color: var(--muted); min-width: 100px; }
+    .day-btns { display: flex; gap: 4px; }
+    .day-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); font-size: 12px; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: var(--sans); }
+    .day-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .day-btn.selected-add { background: #d4881a; color: #fff; border-color: #d4881a; }
+    .day-btn.selected-dl { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .repeat-pill { font-size: 10px; padding: 2px 7px; border-radius: 99px; background: var(--bg); color: var(--muted); font-family: var(--mono); white-space: nowrap; border: 1px solid var(--border); }
+
+    .weekly-section { margin-top: 1.5rem; }
+    .weekly-section-title { font-size: 11px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .weekly-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 6px; }
+
+    footer {
+      margin-top: 2rem;
+      text-align: center;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>課題期限トラッカー</h1>
+    <p>大学の課題をみんなで管理</p>
+  </header>
+
+  <div class="add-card">
+    <div class="row">
+      <div class="field">
+        <label>課題名</label>
+        <input type="text" id="titleInput" placeholder="例：英語レポート" />
+      </div>
+
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>リンク（任意）</label>
+        <input type="text" id="urlInput" placeholder="例：https://classroom.google.com/..." />
+      </div>
+    </div>
+    <div class="row" style="align-items: flex-end;">
+      <div class="field date-field">
+        <label>期限日</label>
+        <div class="cal-wrap">
+          <div class="cal-trigger" id="calTrigger" onclick="toggleCal()">
+            <span id="calDisplay" class="placeholder">日付を選択</span>
+            <span>📅</span>
+          </div>
+          <div class="cal-popup" id="calPopup">
+            <div class="cal-header">
+              <button class="cal-nav" onclick="changeMonth(-1)">&#8249;</button>
+              <span class="cal-month" id="calMonth"></span>
+              <button class="cal-nav" onclick="changeMonth(1)">&#8250;</button>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+          </div>
+        </div>
+        <input type="hidden" id="dateInput" />
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;flex:0 0 auto;">
+        <label style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">&nbsp;</label>
+        <div style="display:flex;align-items:center;gap:8px;height:36px;">
+          <span style="font-size:13px;color:var(--text);white-space:nowrap;">自動追加</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="autoToggle" onchange="toggleAutoOptions()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      <button class="add-btn" onclick="addItem()">追加する</button>
+    </div>
+    <div class="auto-options" id="autoOptions">
+      <div class="auto-row">
+        <span class="auto-row-label">課題が出る曜日</span>
+        <div class="day-btns" id="addDayBtns">
+          <button class="day-btn" data-day="0">日</button>
+          <button class="day-btn" data-day="1">月</button>
+          <button class="day-btn" data-day="2">火</button>
+          <button class="day-btn" data-day="3">水</button>
+          <button class="day-btn" data-day="4">木</button>
+          <button class="day-btn" data-day="5">金</button>
+          <button class="day-btn" data-day="6">土</button>
+        </div>
+      </div>
+      <div class="auto-row">
+        <span class="auto-row-label">締め切り曜日</span>
+        <div class="day-btns" id="deadlineDayBtns">
+          <button class="day-btn" data-day="0">日</button>
+          <button class="day-btn" data-day="1">月</button>
+          <button class="day-btn" data-day="2">火</button>
+          <button class="day-btn" data-day="3">水</button>
+          <button class="day-btn" data-day="4">木</button>
+          <button class="day-btn" data-day="5">金</button>
+          <button class="day-btn" data-day="6">土</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);">例：木曜に課題が出て → 次の火曜が締め切り</div>
+    </div>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <div class="sync-bar">
+    <span class="dot" id="dot"></span>
+    <span id="syncText">読み込み中...</span>
+  </div>
+
+  <div class="list" id="list"></div>
+
+    <div class="weekly-section">
+    <div class="weekly-section-title">🔁 自動追加の課題</div>
+    <div id="weeklyList"></div>
+  </div>
+
+  <div style="margin-top:2rem;">
+    <button onclick="toggleLog()" style="background:none;border:none;cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);padding:0;text-decoration:underline;">削除ログを見る</button>
+    <div id="logSection" style="display:none;margin-top:10px;">
+      <div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">削除ログ</div>
+      <div id="logList" style="font-size:12px;color:var(--muted);font-family:var(--mono);"></div>
+    </div>
+  </div>
+
+<footer>自動保存 · 30秒ごとに更新</footer>
+</div>
+
+<script>
+  const SUPA_URL = "https://zuqcoktjtmsqkpxxqzki.supabase.co";
+  const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1cWNva3RqdG1zcWtweHhxemtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NTExNzEsImV4cCI6MjA5MjUyNzE3MX0.DXcKNJakM8wxUWbdtXbppLIxBhaqm9bNnU03jdSCvRw";
+  const DONE_KEY = "deadline-done-v1";
+  let manualDeletions = []; // Supabaseから取得
+
+  async function loadManualDeletions() {
+    try {
+      manualDeletions = await supaFetch("manual_deletions?select=*") || [];
+    } catch(e) { manualDeletions = []; }
+  }
+
+  function isManuallyDeleted(title, deadlineDate) {
+    return manualDeletions.some(x => x.title === title && x.deadline_date === deadlineDate);
+  }
+
+  async function addManualDeletion(title, deadlineDate) {
+    try {
+      const result = await supaFetch("manual_deletions", {
+        method: "POST",
+        prefer: "return=representation",
+        body: JSON.stringify({ title, deadline_date: deadlineDate })
+      });
+      if (result && result[0]) manualDeletions.push(result[0]);
+    } catch(e) {}
+  }
+
+  async function clearManualDeletions(title) {
+    try {
+      const toDelete = manualDeletions.filter(x => x.title === title);
+      for (const d of toDelete) {
+        await supaFetch("manual_deletions?id=eq." + d.id, { method: "DELETE" });
+      }
+      manualDeletions = manualDeletions.filter(x => x.title !== title);
+    } catch(e) {}
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  let items = [];
+
+  function getDoneSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || "[]")); }
+    catch { return new Set(); }
+  }
+
+  function saveDone(doneSet) {
+    localStorage.setItem(DONE_KEY, JSON.stringify([...doneSet]));
+  }
+
+  async function supaFetch(path, options = {}) {
+    const res = await fetch(SUPA_URL + "/rest/v1/" + path, {
+      ...options,
+      headers: {
+        "apikey": SUPA_KEY,
+        "Authorization": "Bearer " + SUPA_KEY,
+        "Content-Type": "application/json",
+        "Prefer": options.prefer || "",
+        ...options.headers
+      }
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  function days(dateStr) {
+    const parts = dateStr.split("-");
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+    return Math.round((d - today) / 86400000);
+  }
+
+  function status(d, done) {
+    if (done) return "done";
+    if (d <= 3) return "urgent";
+    if (d <= 7) return "warning";
+    return "ok";
+  }
+
+  function label(d, done) {
+    if (done) return "完了";
+    if (d < 0) return Math.abs(d) + "日超過";
+    if (d === 0) return "今日!";
+    if (d === 1) return "明日";
+    return "あと" + d + "日";
+  }
+
+  function numDisplay(d, done) {
+    if (done) return "✓";
+    if (d < 0) return "!";
+    return d;
+  }
+
+  function render() {
+    const doneSet = getDoneSet();
+    const withDone = items.map(item => ({ ...item, done: doneSet.has(item.id) }));
+    const sorted = [...withDone].sort((a,b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      return days(a.date) - days(b.date);
+    });
+    const list = document.getElementById("list");
+    if (!sorted.length) {
+      list.innerHTML = '<div class="empty">課題はまだありません。追加してみましょう！</div>';
+      return;
+    }
+    list.innerHTML = sorted.map(item => {
+      const d = days(item.date);
+      const s = status(d, item.done);
+      const linkIcon = item.url
+        ? `<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+            <a href="${item.url}" target="_blank" rel="noopener" title="リンクを開く" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);text-decoration:none;" onclick="event.stopPropagation()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></a>
+            <button onclick="editLink(${item.id})" title="リンクを編集" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;padding:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          </div>`
+        : `<button onclick="editLink(${item.id})" title="リンクを追加" style="display:flex;align-items:center;justify-content:center;flex-shrink:0;height:28px;padding:0 8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);white-space:nowrap;">リンク追加</button>`;
+      return `<div class="item ${s}">
+        <button class="check ${item.done ? "checked" : ""}" onclick="toggle(${item.id})">${item.done ? "✓" : ""}</button>
+        <div class="info">
+          <div class="name">${item.title}</div>
+          <div class="meta">${item.date}</div>
+        </div>
+        ${linkIcon}
+        <div class="countdown">
+          <div class="num ${s}">${numDisplay(d, item.done)}</div>
+          <div><span class="pill ${s}">${label(d, item.done)}</span></div>
+        </div>
+        <button class="del" onclick="remove(${item.id})">×</button>
+      </div>`;
+    }).join("");
+  }
+
+  function setSyncing(on) {
+    document.getElementById("dot").className = "dot" + (on ? " syncing" : "");
+  }
+
+  function setStatus(text) {
+    document.getElementById("syncText").textContent = text;
+  }
+
+  async function load() {
+    setSyncing(true);
+    try {
+      const data = await supaFetch("assignments?select=*&order=created_at.asc");
+      items = data || [];
+      // 期限超過した課題を自動削除
+      const expired = items.filter(x => days(x.date) < 0);
+      for (const item of expired) {
+        try {
+          await supaFetch("assignments?id=eq." + item.id, { method: "DELETE" });
+          items = items.filter(x => x.id !== item.id);
+        } catch(e) {}
+      }
+      setStatus("読み込み完了 · " + new Date().toLocaleTimeString("ja-JP"));
+    } catch(e) {
+      setStatus("読み込みに失敗しました");
+    }
+    setSyncing(false);
+    render();
+  }
+
+  async function addItem() {
+    const title = document.getElementById("titleInput").value.trim();
+    const date = document.getElementById("dateInput").value;
+    const isAuto = document.getElementById("autoToggle").checked;
+    const errorMsg = document.getElementById("errorMsg");
+    if (!title) { errorMsg.textContent = "課題名を入力してください"; return; }
+    if (isAuto) {
+      if (selectedAddDay === null) { errorMsg.textContent = "課題が出る曜日を選んでください"; return; }
+      if (selectedDeadlineDay === null) { errorMsg.textContent = "締め切り曜日を選んでください"; return; }
+    } else {
+      if (!date) { errorMsg.textContent = "期限日を選択してください"; return; }
+    }
+    errorMsg.textContent = "";
+    setSyncing(true);
+    try {
+      if (isAuto) {
+        const newWeekly = await supaFetch("weekly_assignments", {
+          method: "POST",
+          prefer: "return=representation",
+          body: JSON.stringify({ title, add_day: selectedAddDay, deadline_day: selectedDeadlineDay })
+        });
+        if (newWeekly && newWeekly[0]) weeklyItems.push(newWeekly[0]);
+        renderWeekly();
+        await addWeeklyIfNeeded();
+      } else {
+        const newItem = await supaFetch("assignments", {
+          method: "POST",
+          prefer: "return=representation",
+        body: (() => { const urlVal = document.getElementById("urlInput").value.trim(); return JSON.stringify({ title, date, url: urlVal || null }); })()
+        });
+        if (newItem && newItem[0]) items.push(newItem[0]);
+        render();
+      }
+      document.getElementById("titleInput").value = "";
+
+      document.getElementById("urlInput").value = "";
+      document.getElementById("dateInput").value = "";
+      selectedDate = null;
+      document.getElementById("calDisplay").textContent = "日付を選択";
+      document.getElementById("calDisplay").classList.add("placeholder");
+      document.getElementById("autoToggle").checked = false;
+      document.getElementById("autoOptions").classList.remove("open");
+      selectedAddDay = null; selectedDeadlineDay = null;
+      document.querySelectorAll(".day-btn").forEach(b => b.classList.remove("selected-add","selected-dl"));
+      setStatus("保存しました · " + new Date().toLocaleTimeString("ja-JP"));
+    } catch(e) {
+      errorMsg.textContent = "保存に失敗しました";
+    }
+    setSyncing(false);
+  }
+
+  function toggle(id) {
+    const doneSet = getDoneSet();
+    if (doneSet.has(id)) { doneSet.delete(id); } else { doneSet.add(id); }
+    saveDone(doneSet);
+    render();
+  }
+
+  async function remove(id) {
+    const item = items.find(x => x.id === id);
+    if (!item) return;
+    const confirmed = confirm("「" + item.title + "」を削除しますか？\n\n※ 左のチェックは自分の画面だけに反映されます。\n　 完了した課題はチェックを活用してください！\n　 削除するとみんなの画面からも消えます。");
+    if (!confirmed) return;
+    setSyncing(true);
+    try {
+      await supaFetch("assignments?id=eq." + id, { method: "DELETE" });
+      items = items.filter(x => x.id !== id);
+      const doneSet = getDoneSet();
+      doneSet.delete(id);
+      saveDone(doneSet);
+      // 自動追加の課題なら手動削除としてSupabaseに記録
+      const isWeekly = weeklyItems.some(w => w.title === item.title);
+      if (isWeekly) {
+        await addManualDeletion(item.title, item.date);
+      }
+      // 削除ログを記録
+      try {
+        await supaFetch("deletion_logs", {
+          method: "POST",
+          prefer: "return=representation",
+          body: JSON.stringify({ title: item.title })
+        });
+      } catch(e) {}
+      setStatus("削除しました · " + new Date().toLocaleTimeString("ja-JP"));
+      render();
+    } catch(e) {
+      setStatus("削除に失敗しました");
+    }
+    setSyncing(false);
+  }
+
+  ["titleInput"].forEach(id => {
+    document.getElementById(id).addEventListener("keydown", e => {
+      if (e.key === "Enter") addItem();
+    });
+  });
+
+  // Calendar logic
+  let calDate = new Date(today);
+  let selectedDate = null;
+
+  function toggleCal() {
+    const popup = document.getElementById("calPopup");
+    const trigger = document.getElementById("calTrigger");
+    const isOpen = popup.classList.contains("open");
+    if (isOpen) { popup.classList.remove("open"); trigger.classList.remove("open"); }
+    else { popup.classList.add("open"); trigger.classList.add("open"); renderCal(); }
+  }
+
+  function changeMonth(dir) {
+    calDate = new Date(calDate.getFullYear(), calDate.getMonth() + dir, 1);
+    renderCal();
+  }
+
+  function renderCal() {
+    const y = calDate.getFullYear(), m = calDate.getMonth();
+    document.getElementById("calMonth").textContent = y + "年" + (m+1) + "月";
+    const grid = document.getElementById("calGrid");
+    const dows = ["日","月","火","水","木","金","土"];
+    let html = dows.map(d => `<div class="cal-dow">${d}</div>`).join("");
+    const first = new Date(y, m, 1).getDay();
+    for (let i = 0; i < first; i++) html += `<div class="cal-day empty"></div>`;
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const thisDate = new Date(y, m, d);
+      const dateStr = y + "-" + String(m+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+      const isPast = thisDate < today;
+      const isToday = thisDate.getTime() === today.getTime();
+      const isSelected = selectedDate === dateStr;
+      let cls = "cal-day";
+      if (isPast) cls += " past";
+      if (isToday) cls += " today";
+      if (isSelected) cls += " selected";
+      html += `<div class="${cls}" onclick="selectDate('${dateStr}')">${d}</div>`;
+    }
+    grid.innerHTML = html;
+  }
+
+  function selectDate(dateStr) {
+    selectedDate = dateStr;
+    document.getElementById("dateInput").value = dateStr;
+    const parts = dateStr.split("-");
+    document.getElementById("calDisplay").textContent = parts[0] + "/" + parseInt(parts[1]) + "/" + parseInt(parts[2]);
+    document.getElementById("calDisplay").classList.remove("placeholder");
+    document.getElementById("calPopup").classList.remove("open");
+    document.getElementById("calTrigger").classList.remove("open");
+  }
+
+  document.addEventListener("click", e => {
+    const wrap = document.querySelector(".cal-wrap");
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById("calPopup").classList.remove("open");
+      document.getElementById("calTrigger").classList.remove("open");
+    }
+  });
+
+  const DAYS = ["日","月","火","水","木","金","土"];
+  let weeklyItems = [];
+  let selectedAddDay = null;
+  let selectedDeadlineDay = null;
+
+  function toggleAutoOptions() {
+    const on = document.getElementById("autoToggle").checked;
+    document.getElementById("autoOptions").classList.toggle("open", on);
+    if (!on) { selectedAddDay = null; selectedDeadlineDay = null; }
+  }
+
+  function setupDayBtns() {
+    document.querySelectorAll("#addDayBtns .day-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#addDayBtns .day-btn").forEach(b => b.classList.remove("selected-add"));
+        btn.classList.add("selected-add");
+        selectedAddDay = parseInt(btn.dataset.day);
+      });
+    });
+    document.querySelectorAll("#deadlineDayBtns .day-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#deadlineDayBtns .day-btn").forEach(b => b.classList.remove("selected-dl"));
+        btn.classList.add("selected-dl");
+        selectedDeadlineDay = parseInt(btn.dataset.day);
+      });
+    });
+  }
+
+  function toDateStr(d) {
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+
+  // 課題が出る曜日(addDay)になったら締め切り日(deadlineDay)を計算して返す
+  // まだaddDayになっていなければnullを返す（追加しない）
+  // 締め切りを過ぎていたら古い課題を削除して次のサイクルを待つ
+  function getDeadlineIfActive(addDay, deadlineDay) {
+    const todayDay = today.getDay();
+
+    // 締め切り曜日は addDay より何日後か
+    const diffToDl = (deadlineDay - addDay + 7) % 7 || 7;
+
+    // 直近のaddDayを計算（過去も含む）
+    const diffFromAddDay = (todayDay - addDay + 7) % 7; // 今日がaddDayから何日後か
+    const lastAddDate = new Date(today);
+    lastAddDate.setDate(today.getDate() - diffFromAddDay);
+
+    // 対応する締め切り日
+    const dlDate = new Date(lastAddDate);
+    dlDate.setDate(lastAddDate.getDate() + diffToDl);
+
+    // 締め切りがまだ来ていない かつ addDayが来ている（diffFromAddDay >= 0）
+    if (dlDate >= today && diffFromAddDay >= 0) {
+      return toDateStr(dlDate);
+    }
+    // まだaddDayが来ていない場合はnull
+    return null;
+  }
+
+  async function loadWeekly() {
+    try {
+      weeklyItems = await supaFetch("weekly_assignments?select=*&order=created_at.asc") || [];
+    } catch(e) { weeklyItems = []; }
+    renderWeekly();
+  }
+
+  function renderWeekly() {
+    const list = document.getElementById("weeklyList");
+    if (!weeklyItems.length) {
+      list.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:4px 0 8px;">なし</div>';
+      return;
+    }
+    list.innerHTML = weeklyItems.map(w => `
+      <div class="weekly-item">
+        <span class="repeat-pill">${DAYS[w.add_day]}→${DAYS[w.deadline_day]}</span>
+        <span style="flex:1;font-weight:500;">${w.title}</span>
+        
+        <button class="del" onclick="removeWeekly(${w.id})" title="削除">×</button>
+      </div>
+    `).join("");
+  }
+
+  async function removeWeekly(id) {
+    const item = weeklyItems.find(x => x.id === id);
+    if (!item) return;
+    const confirmed = confirm("「" + item.title + "」の自動追加を削除しますか？\n\n削除すると毎週の自動追加が止まります。");
+    if (!confirmed) return;
+    try {
+      await supaFetch("weekly_assignments?id=eq." + id, { method: "DELETE" });
+      weeklyItems = weeklyItems.filter(x => x.id !== id);
+      // 手動削除記録もリセット（同じ課題名で再登録できるように）
+      await clearManualDeletions(item.title);
+      renderWeekly();
+    } catch(e) {}
+  }
+
+  async function addWeeklyIfNeeded() {
+    for (const weekly of weeklyItems) {
+      const deadlineDate = getDeadlineIfActive(weekly.add_day, weekly.deadline_day);
+
+      if (deadlineDate) {
+        // 手動削除済みの場合はスキップ
+        const manuallyDeleted = isManuallyDeleted(weekly.title, deadlineDate);
+        if (manuallyDeleted) continue;
+
+        // 同じタイトルの課題を全部取得
+        const existing = items.filter(x => x.title === weekly.title);
+        const alreadyExists = existing.some(x => x.date === deadlineDate);
+
+        if (!alreadyExists) {
+          // 古い同名課題を全部削除してから追加（重複防止）
+          for (const old of existing) {
+            try {
+              await supaFetch("assignments?id=eq." + old.id, { method: "DELETE" });
+              items = items.filter(x => x.id !== old.id);
+            } catch(e) {}
+          }
+          // Supabaseに既に同じものがないか再確認してから追加
+          try {
+            const check = await supaFetch("assignments?title=eq." + encodeURIComponent(weekly.title) + "&date=eq." + encodeURIComponent(deadlineDate) + "&select=id");
+            if (!check || check.length === 0) {
+              const newItem = await supaFetch("assignments", {
+                method: "POST",
+                prefer: "return=representation",
+                body: JSON.stringify({ title: weekly.title, date: deadlineDate })
+              });
+              if (newItem && newItem[0]) items.push(newItem[0]);
+            } else {
+              // 既にDBにあるなら items に追加だけ
+              items.push(...check);
+            }
+          } catch(e) {}
+        }
+      } else {
+        // addDayがまだ来ていない → 期限切れの古い課題を削除、手動削除記録もリセット
+        const expired = items.filter(x => x.title === weekly.title);
+        for (const old of expired) {
+          try {
+            await supaFetch("assignments?id=eq." + old.id, { method: "DELETE" });
+            items = items.filter(x => x.id !== old.id);
+          } catch(e) {}
+        }
+        // 古い手動削除記録をリセット（新しいサイクルに備える）
+        await clearManualDeletions(weekly.title);
+      }
+    }
+    render();
+  }
+
+  async function editLink(id) {
+    const item = items.find(x => x.id === id);
+    if (!item) return;
+    const current = item.url || "";
+    const newUrl = prompt(item.url ? "リンクを編集（空にすると削除）:" : "リンクを追加:", current);
+    if (newUrl === null) return;
+    const urlVal = newUrl.trim() || null;
+    setSyncing(true);
+    try {
+      await supaFetch("assignments?id=eq." + id, {
+        method: "PATCH",
+        prefer: "return=representation",
+        body: JSON.stringify({ url: urlVal })
+      });
+      item.url = urlVal;
+      render();
+      setStatus("保存しました · " + new Date().toLocaleTimeString("ja-JP"));
+    } catch(e) {
+      setStatus("保存に失敗しました");
+    }
+    setSyncing(false);
+  }
+
+  let logLoaded = false;
+
+  async function toggleLog() {
+    const section = document.getElementById("logSection");
+    const isOpen = section.style.display !== "none";
+    if (isOpen) {
+      section.style.display = "none";
+    } else {
+      section.style.display = "block";
+      if (!logLoaded) await loadLog();
+    }
+  }
+
+  async function loadLog() {
+    const logList = document.getElementById("logList");
+    logList.textContent = "読み込み中...";
+    try {
+      const logs = await supaFetch("deletion_logs?select=*&order=deleted_at.desc&limit=30") || [];
+      if (!logs.length) {
+        logList.textContent = "ログはありません";
+        return;
+      }
+      logList.innerHTML = logs.map(l => {
+        const d = new Date(l.deleted_at);
+        const dateStr = d.getFullYear() + "/" + (d.getMonth()+1) + "/" + d.getDate() + " " + d.getHours().toString().padStart(2,"0") + ":" + d.getMinutes().toString().padStart(2,"0");
+        return `<div style="padding:4px 0;border-bottom:0.5px solid var(--border);">${dateStr} · 「${l.title}」が削除されました</div>`;
+      }).join("");
+      logLoaded = true;
+    } catch(e) {
+      logList.textContent = "読み込みに失敗しました";
+    }
+  }
+
+  async function init() {
+    setupDayBtns();
+    await load();
+    await loadWeekly();
+    await loadManualDeletions();
+    await addWeeklyIfNeeded();
+  }
+
+  init();
+  setInterval(async () => { await load(); await loadManualDeletions(); await addWeeklyIfNeeded(); }, 30000);
+</script>
+</body>
+</html>
