@@ -57,12 +57,62 @@
       font-family: var(--mono);
     }
 
+    .fab-wrap {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1rem;
+    }
+
+    .fab {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 99px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 500;
+      overflow: hidden;
+      max-width: 44px;
+      transition: max-width 0.3s ease, padding 0.3s ease, gap 0.3s ease;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(45,90,61,0.25);
+    }
+    .fab:hover {
+      max-width: 160px;
+      gap: 8px;
+    }
+    .fab svg { flex-shrink: 0; }
+    .fab-label {
+      overflow: hidden;
+      max-width: 0;
+      opacity: 0;
+      transition: max-width 0.3s ease, opacity 0.2s ease 0.1s;
+      pointer-events: none;
+    }
+    .fab:hover .fab-label {
+      max-width: 120px;
+      opacity: 1;
+    }
+
     .add-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 1.25rem;
       margin-bottom: 1.5rem;
+      display: none;
+      animation: slideDown 0.2s ease;
+    }
+    .add-card.open { display: block; }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: none; }
     }
 
     .add-card label {
@@ -280,6 +330,48 @@
       min-height: 16px;
     }
 
+    .summary-badge {
+      font-size: 12px;
+      font-family: var(--mono);
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-weight: 500;
+    }
+    .summary-badge.urgent { background: var(--danger-light); color: var(--danger); }
+    .summary-badge.warning { background: var(--warn-light); color: var(--warn); }
+    .summary-badge.ok { background: var(--accent-light); color: var(--accent); }
+    .summary-badge.done { background: #f0f0ec; color: var(--done); }
+
+    .group-title {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 1.25rem 0 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .group-title.urgent { color: #c0392b; }
+    .group-title.warning { color: #d4881a; }
+    .group-title.ok { color: var(--accent); }
+
+    .done-toggle {
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 1.25rem 0 0.5rem;
+    }
+    .done-toggle:hover { color: var(--text); }
+
     .section-title {
       font-size: 13px;
       font-weight: 500;
@@ -359,9 +451,17 @@
   <header>
     <h1>課題期限トラッカー</h1>
     <p>大学の課題をみんなで管理</p>
+    <div id="summary" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"></div>
   </header>
 
-  <div class="add-card">
+  <div class="fab-wrap">
+    <button class="fab" onclick="toggleAddCard()" id="fabBtn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span class="fab-label">課題を追加</span>
+    </button>
+  </div>
+
+  <div class="add-card" id="addCard">
     <div class="row">
       <div class="field">
         <label>課題名</label>
@@ -462,7 +562,7 @@
 <script>
   const SUPA_URL = "https://zuqcoktjtmsqkpxxqzki.supabase.co";
   const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1cWNva3RqdG1zcWtweHhxemtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NTExNzEsImV4cCI6MjA5MjUyNzE3MX0.DXcKNJakM8wxUWbdtXbppLIxBhaqm9bNnU03jdSCvRw";
-  const DONE_KEY = "deadline-done-v1";
+  const DONE_KEY = "deadline-done-v2";
   let manualDeletions = []; // Supabaseから取得
 
   async function loadManualDeletions() {
@@ -505,6 +605,19 @@
 
   function saveDone(doneSet) {
     localStorage.setItem(DONE_KEY, JSON.stringify([...doneSet]));
+  }
+
+  function getDoneKey(item) {
+    return item.title + "|" + item.date;
+  }
+
+  function escHtml(str) {
+    return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function isSafeUrl(url) {
+    if (!url) return false;
+    try { const u = new URL(url); return ["http:","https:"].includes(u.protocol); } catch { return false; }
   }
 
   async function supaFetch(path, options = {}) {
@@ -550,41 +663,92 @@
     return d;
   }
 
+  function itemHtml(item) {
+    const d = days(item.date);
+    const s = status(d, item.done);
+    const safeUrl = isSafeUrl(item.url) ? escHtml(item.url) : null;
+    const linkIcon = safeUrl
+      ? `<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+          <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="リンクを開く" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);text-decoration:none;" onclick="event.stopPropagation()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></a>
+          <button onclick="editLink(${item.id})" title="リンクを編集" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;padding:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        </div>`
+      : `<button onclick="editLink(${item.id})" title="リンクを追加" style="display:flex;align-items:center;justify-content:center;flex-shrink:0;height:28px;padding:0 8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);white-space:nowrap;">リンク追加</button>`;
+    return `<div class="item ${s}">
+      <button class="check ${item.done ? "checked" : ""}" onclick="toggle(${item.id})">${item.done ? "✓" : ""}</button>
+      <div class="info">
+        <div class="name">${escHtml(item.title)}</div>
+        <div class="meta">${escHtml(item.date)}</div>
+      </div>
+      ${linkIcon}
+      <div class="countdown">
+        <div class="num ${s}">${numDisplay(d, item.done)}</div>
+        <div><span class="pill ${s}">${label(d, item.done)}</span></div>
+      </div>
+      <button class="del" onclick="remove(${item.id})">×</button>
+    </div>`;
+  }
+
+  function getDoneExpanded() {
+    try { return localStorage.getItem("deadline-done-expanded") === "true"; }
+    catch { return false; }
+  }
+
+  function toggleDoneSection() {
+    const expanded = !getDoneExpanded();
+    localStorage.setItem("deadline-done-expanded", expanded);
+    render();
+  }
+
   function render() {
     const doneSet = getDoneSet();
-    const withDone = items.map(item => ({ ...item, done: doneSet.has(item.id) }));
-    const sorted = [...withDone].sort((a,b) => {
-      if (a.done !== b.done) return a.done ? 1 : -1;
-      return days(a.date) - days(b.date);
-    });
+    const withDone = items.map(item => ({ ...item, done: doneSet.has(getDoneKey(item)) }));
+
+    const urgent  = withDone.filter(x => !x.done && days(x.date) <= 3).sort((a,b) => days(a.date) - days(b.date));
+    const warning = withDone.filter(x => !x.done && days(x.date) > 3 && days(x.date) <= 7).sort((a,b) => days(a.date) - days(b.date));
+    const ok      = withDone.filter(x => !x.done && days(x.date) > 7).sort((a,b) => days(a.date) - days(b.date));
+    const done    = withDone.filter(x => x.done).sort((a,b) => days(a.date) - days(b.date));
+
+    // サマリーバッジ
+    const summary = document.getElementById("summary");
+    const badges = [];
+    if (urgent.length)  badges.push(`<span class="summary-badge urgent">🔴 ${urgent.length}件 緊急</span>`);
+    if (warning.length) badges.push(`<span class="summary-badge warning">🟡 ${warning.length}件 今週中</span>`);
+    if (ok.length)      badges.push(`<span class="summary-badge ok">🟢 ${ok.length}件 余裕あり</span>`);
+    if (done.length)    badges.push(`<span class="summary-badge done">✓ ${done.length}件 完了</span>`);
+    summary.innerHTML = badges.join("");
+
     const list = document.getElementById("list");
-    if (!sorted.length) {
+    const total = urgent.length + warning.length + ok.length + done.length;
+    if (!total) {
       list.innerHTML = '<div class="empty">課題はまだありません。追加してみましょう！</div>';
       return;
     }
-    list.innerHTML = sorted.map(item => {
-      const d = days(item.date);
-      const s = status(d, item.done);
-      const linkIcon = item.url
-        ? `<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
-            <a href="${item.url}" target="_blank" rel="noopener" title="リンクを開く" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);text-decoration:none;" onclick="event.stopPropagation()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></a>
-            <button onclick="editLink(${item.id})" title="リンクを編集" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;padding:0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          </div>`
-        : `<button onclick="editLink(${item.id})" title="リンクを追加" style="display:flex;align-items:center;justify-content:center;flex-shrink:0;height:28px;padding:0 8px;border-radius:6px;border:0.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);white-space:nowrap;">リンク追加</button>`;
-      return `<div class="item ${s}">
-        <button class="check ${item.done ? "checked" : ""}" onclick="toggle(${item.id})">${item.done ? "✓" : ""}</button>
-        <div class="info">
-          <div class="name">${item.title}</div>
-          <div class="meta">${item.date}</div>
-        </div>
-        ${linkIcon}
-        <div class="countdown">
-          <div class="num ${s}">${numDisplay(d, item.done)}</div>
-          <div><span class="pill ${s}">${label(d, item.done)}</span></div>
-        </div>
-        <button class="del" onclick="remove(${item.id})">×</button>
-      </div>`;
-    }).join("");
+
+    let html = "";
+
+    if (urgent.length) {
+      html += `<div class="group-title urgent">🔴 緊急 · 3日以内</div>`;
+      html += `<div class="list">${urgent.map(itemHtml).join("")}</div>`;
+    }
+    if (warning.length) {
+      html += `<div class="group-title warning">🟡 今週中 · 7日以内</div>`;
+      html += `<div class="list">${warning.map(itemHtml).join("")}</div>`;
+    }
+    if (ok.length) {
+      html += `<div class="group-title ok">🟢 余裕あり</div>`;
+      html += `<div class="list">${ok.map(itemHtml).join("")}</div>`;
+    }
+    if (done.length) {
+      const expanded = getDoneExpanded();
+      html += `<button class="done-toggle" onclick="toggleDoneSection()">
+        <span>${expanded ? "▾" : "▸"}</span> 完了済み ${done.length}件
+      </button>`;
+      if (expanded) {
+        html += `<div class="list">${done.map(itemHtml).join("")}</div>`;
+      }
+    }
+
+    list.innerHTML = html;
   }
 
   function setSyncing(on) {
@@ -650,8 +814,8 @@
         render();
       }
       document.getElementById("titleInput").value = "";
-
       document.getElementById("urlInput").value = "";
+      document.getElementById("addCard").classList.remove("open");
       document.getElementById("dateInput").value = "";
       selectedDate = null;
       document.getElementById("calDisplay").textContent = "日付を選択";
@@ -668,14 +832,17 @@
   }
 
   function toggle(id) {
+    const item = items.find(x => x.id == id);
+    if (!item) return;
+    const key = getDoneKey(item);
     const doneSet = getDoneSet();
-    if (doneSet.has(id)) { doneSet.delete(id); } else { doneSet.add(id); }
+    if (doneSet.has(key)) { doneSet.delete(key); } else { doneSet.add(key); }
     saveDone(doneSet);
     render();
   }
 
   async function remove(id) {
-    const item = items.find(x => x.id === id);
+    const item = items.find(x => x.id == id);
     if (!item) return;
     const confirmed = confirm("「" + item.title + "」を削除しますか？\n\n※ 左のチェックは自分の画面だけに反映されます。\n　 完了した課題はチェックを活用してください！\n　 削除するとみんなの画面からも消えます。");
     if (!confirmed) return;
@@ -684,7 +851,7 @@
       await supaFetch("assignments?id=eq." + id, { method: "DELETE" });
       items = items.filter(x => x.id !== id);
       const doneSet = getDoneSet();
-      doneSet.delete(id);
+      doneSet.delete(getDoneKey(item));
       saveDone(doneSet);
       // 自動追加の課題なら手動削除としてSupabaseに記録
       const isWeekly = weeklyItems.some(w => w.title === item.title);
@@ -699,12 +866,19 @@
           body: JSON.stringify({ title: item.title })
         });
       } catch(e) {}
+      logLoaded = false;
       setStatus("削除しました · " + new Date().toLocaleTimeString("ja-JP"));
       render();
     } catch(e) {
       setStatus("削除に失敗しました");
     }
     setSyncing(false);
+  }
+
+  function toggleAddCard() {
+    const card = document.getElementById("addCard");
+    const isOpen = card.classList.contains("open");
+    card.classList.toggle("open", !isOpen);
   }
 
   ["titleInput"].forEach(id => {
@@ -890,7 +1064,7 @@
           }
           // Supabaseに既に同じものがないか再確認してから追加
           try {
-            const check = await supaFetch("assignments?title=eq." + encodeURIComponent(weekly.title) + "&date=eq." + encodeURIComponent(deadlineDate) + "&select=id");
+            const check = await supaFetch("assignments?title=eq." + encodeURIComponent(weekly.title) + "&date=eq." + encodeURIComponent(deadlineDate) + "&select=*");
             if (!check || check.length === 0) {
               const newItem = await supaFetch("assignments", {
                 method: "POST",
@@ -921,12 +1095,14 @@
   }
 
   async function editLink(id) {
-    const item = items.find(x => x.id === id);
+    const item = items.find(x => x.id == id);
     if (!item) return;
     const current = item.url || "";
     const newUrl = prompt(item.url ? "リンクを編集（空にすると削除）:" : "リンクを追加:", current);
     if (newUrl === null) return;
-    const urlVal = newUrl.trim() || null;
+    const trimmed = newUrl.trim();
+    if (trimmed && !isSafeUrl(trimmed)) { alert("URLはhttpまたはhttpsで始まるアドレスを入力してください"); return; }
+    const urlVal = trimmed || null;
     setSyncing(true);
     try {
       await supaFetch("assignments?id=eq." + id, {
@@ -985,7 +1161,7 @@
   }
 
   init();
-  setInterval(async () => { await load(); await loadManualDeletions(); await addWeeklyIfNeeded(); }, 30000);
+  setInterval(async () => { await load(); await loadWeekly(); await loadManualDeletions(); await addWeeklyIfNeeded(); }, 30000);
 </script>
 </body>
 </html>
